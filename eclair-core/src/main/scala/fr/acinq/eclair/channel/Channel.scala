@@ -1242,7 +1242,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(NEGOTIATING)(handleExceptions {
-    case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
+    case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig, _), d: DATA_NEGOTIATING) =>
       log.info("received closingFeeSatoshis={}", remoteClosingFee)
       Closing.checkClosingSignature(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, remoteClosingFee, remoteSig) match {
         case Right(signedClosingTx) if d.closingTxProposed.last.lastOption.exists(_.localClosingSigned.feeSatoshis == remoteClosingFee) || d.closingTxProposed.flatten.size >= MAX_NEGOTIATION_ITERATIONS =>
