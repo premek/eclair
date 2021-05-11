@@ -34,7 +34,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol._
 import kamon.context.Context
@@ -309,10 +309,10 @@ object Router {
                         searchMaxFeePct: Double,
                         searchMaxRouteLength: Int,
                         searchMaxCltv: CltvExpiryDelta,
-                        searchHeuristicsEnabled: Boolean,
-                        searchRatioCltv: Double,
-                        searchRatioChannelAge: Double,
-                        searchRatioChannelCapacity: Double,
+                        searchHeuristicsRiskFactor: Double,
+                        searchHeuristicsMaxEdgeProbability: Double,
+                        searchHeuristicsFailurePenaltyBaseMsat: MilliSatoshi,
+                        searchHeuristicsFailurePenaltyProportionalMillionths: Long,
                         mppMinPartAmount: MilliSatoshi,
                         mppMaxParts: Int)
 
@@ -432,7 +432,7 @@ object Router {
 
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
-  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios], mpp: MultiPartParams) {
+  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, heuristicsConstants: HeuristicsConstants, mpp: MultiPartParams) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
       maxFeeBase.max(amount * maxFeePct)

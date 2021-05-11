@@ -121,7 +121,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, None)
     assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
     assert(weightedPath.length === 3)
-    assert(weightedPath.cost === expectedCost)
+    assert(weightedPath.fees === expectedCost)
 
     // update channel 5 so that it can route the final amount (10000) but not the amount + fees (10002)
     val graph1 = graph.addEdge(makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat, maxHtlc = Some(10001 msat)))
@@ -792,7 +792,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       val Success(routes) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, strictFee, numRoutes = 3, routeParams = strictFeeParams, currentBlockHeight = 400000)
       assert(routes.length === 2, routes)
       val weightedPath = Graph.pathWeight(a, route2Edges(routes.head), DEFAULT_AMOUNT_MSAT, 400000, None)
-      val totalFees = weightedPath.cost - DEFAULT_AMOUNT_MSAT
+      val totalFees = weightedPath.fees - DEFAULT_AMOUNT_MSAT
       // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7 msat of fees)
       assert(totalFees === 5.msat || totalFees === 6.msat)
       assert(weightedPath.length === 3)
@@ -807,19 +807,20 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 3, totCltv = 18)
     // A -> E -> C -> D is 'capacity optimized', more recent channel/larger capacity route
     val g = DirectedGraph(List(
-      makeEdge(1L, a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(13)),
-      makeEdge(4L, a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(12)),
-      makeEdge(2L, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(500)),
-      makeEdge(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(500)),
-      makeEdge(5L, e, f, feeBase = 2 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(9)),
-      makeEdge(6L, f, d, feeBase = 2 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(9)),
-      makeEdge(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, capacity = largeCapacity, cltvDelta = CltvExpiryDelta(12))
+      makeEdge(1L, a, b, feeBase = 0 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(13)),
+      makeEdge(4L, a, e, feeBase = 0 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(12)),
+      makeEdge(2L, b, c, feeBase = 1 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(500)),
+      makeEdge(3L, c, d, feeBase = 1 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(500)),
+      makeEdge(5L, e, f, feeBase = 2 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(9)),
+      makeEdge(6L, f, d, feeBase = 2 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(9)),
+      makeEdge(7L, e, c, feeBase = 2 msat, 1000, minHtlc = 0 msat, capacity = largeCapacity, cltvDelta = CltvExpiryDelta(12))
     ))
 
     val Success(routeFeeOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route2Nodes(routeFeeOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
 
     val Success(routeCltvOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+      biasFactor = 0,
       cltvDeltaFactor = 1,
       ageFactor = 0,
       capacityFactor = 0
@@ -827,6 +828,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(route2Nodes(routeCltvOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
 
     val Success(routeCapacityOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+      biasFactor = 0,
       cltvDeltaFactor = 0,
       ageFactor = 0,
       capacityFactor = 1
@@ -847,6 +849,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+      biasFactor = 0.01,
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33
@@ -866,6 +869,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+      biasFactor = 0.01,
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33
@@ -887,6 +891,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+      biasFactor = 0.01,
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33
@@ -928,7 +933,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val g = DirectedGraph.makeGraph(updates)
     val params = DEFAULT_ROUTE_PARAMS.copy(
       routeMaxCltv = CltvExpiryDelta(1008),
-      ratios = Some(WeightRatios(cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5)),
+      ratios = Some(WeightRatios(biasFactor = 0, cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5)),
     )
     val thisNode = PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")
     val targetNode = PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")
