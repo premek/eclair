@@ -1788,14 +1788,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
           replyTo ! RES_SUCCESS(c, data.channelId)
           val failure = ForcedLocalCommit(data.channelId)
-          // if we are in NORMAL state, we may have outgoing unsigned htlcs that we can fail right away
-          data match {
-            case _: DATA_NORMAL =>
-              data.commitments.localChanges.proposed.collect {
-              case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(data.commitments.originChannels(add.id), add, HtlcResult.OnChainFail(failure))
-            }
-            case _ => ()
-          }
           handleLocalError(failure, data, Some(c))
         case _ => handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
       }
@@ -2213,6 +2205,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     blockchain ! WatchTxConfirmed(self, closingTx.tx.txid, nodeParams.minDepthBlocks)
   }
 
+  /** We fail outgoing unsigned htlcs right away when transitioning from NORMAL to CLOSING */
+  private def failUnsignedProposedHtlcs(d: HasCommitments) = {
+    d match {
+      case dd: DATA_NORMAL =>
+        dd.commitments.localChanges.proposed.collect {
+          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeCommitted)
+        }
+      case _ => ()
+    }
+  }
+
   private def spendLocalCurrent(d: HasCommitments) = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
@@ -2223,6 +2226,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       log.warning("we have an outdated commitment: will not publish our local tx")
       stay
     } else {
+      failUnsignedProposedHtlcs(d)
       val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
       val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
       val nextData = d match {
@@ -2298,6 +2302,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
+    failUnsignedProposedHtlcs(d)
     val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
@@ -2329,6 +2334,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val remoteCommit = d.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
+    failUnsignedProposedHtlcs(d)
     val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
@@ -2358,6 +2364,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   private def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
+    failUnsignedProposedHtlcs(d)
     Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
