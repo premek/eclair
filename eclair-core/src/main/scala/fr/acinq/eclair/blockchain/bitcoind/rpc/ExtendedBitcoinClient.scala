@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
+import fr.acinq.bitcoin.Psbt.toBase64
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
@@ -98,6 +99,34 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
       val fundedTx = Transaction.read(hex)
       val changePos_opt = if (changePos >= 0) Some(changePos.intValue) else None
       FundTransactionResponse(fundedTx, toSatoshi(fee), changePos_opt)
+    })
+  }
+
+  def fundPsbt(outputs: Map[String, Satoshi], locktime: Int, options: FundTransactionOptions)(implicit ec: ExecutionContext): Future[FundPsbtResponse] = {
+    rpcClient.invoke("walletcreatefundedpsbt", Array.empty, outputs.map { case (a,b) => a -> b.toBtc.toBigDecimal }, locktime, options).map(json => {
+      val JString(base64) = json \ "psbt"
+      val JInt(changePos) = json \ "changepos"
+      val JDecimal(fee) = json \ "fee"
+      val psbt = Psbt.fromBase64(base64).get
+      val changePos_opt = if (changePos >= 0) Some(changePos.intValue) else None
+      FundPsbtResponse(psbt, toSatoshi(fee), changePos_opt)
+    })
+  }
+
+  def processPsbt(psbt: Psbt, sign: Boolean = true, sighashType: Int = SIGHASH_ALL)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
+    val sighashStrings = Map(
+      SIGHASH_ALL -> "ALL",
+      SIGHASH_NONE -> "NONE",
+      SIGHASH_SINGLE -> "SINGLE",
+      (SIGHASH_ALL | SIGHASH_ANYONECANPAY) -> "ALL|ANYONECANPAY",
+      (SIGHASH_NONE | SIGHASH_ANYONECANPAY) -> "NONE|ANYONECANPAY",
+      (SIGHASH_SINGLE | SIGHASH_ANYONECANPAY) -> "SINGLE|ANYONECANPAY")
+    val sighash = sighashStrings.getOrElse(sighashType, throw new IllegalArgumentException(s"invalid sighash flag ${sighashType}"))
+    rpcClient.invoke("walletprocesspsbt", toBase64(psbt), sign, sighash).map(json => {
+      val JString(base64) = json \ "psbt"
+      val JBool(complete) = json \ "complete"
+      val psbt = Psbt.fromBase64(base64).get
+      ProcessPsbtResponse(psbt, complete)
     })
   }
 
@@ -306,6 +335,10 @@ object ExtendedBitcoinClient {
     val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
   }
 
+  case class FundPsbtResponse(psbt: Psbt, fee: Satoshi, changePosition: Option[Int]) {
+    val amountIn: Satoshi = fee + psbt.computeFees().get
+  }
+
   case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
 
   object PreviousTx {
@@ -320,6 +353,8 @@ object ExtendedBitcoinClient {
   }
 
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
+
+  case class ProcessPsbtResponse(psbt: Psbt, complete: Boolean)
 
   /**
    * Information about a transaction currently in the mempool.
