@@ -20,7 +20,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.bitcoin.{Base58, Btc, BtcAmount, MilliBtc, PimpSatoshi, PrivateKey, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Base58, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, PimpSatoshi, PrivateKey, Satoshi, Transaction}
 import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
@@ -119,11 +119,7 @@ trait BitcoindService extends Logging {
     sender.expectMsgType[JValue]
     logger.info(s"generating initial blocks to wallet=$defaultWallet...")
     generateBlocks(150)
-    awaitCond({
-      sender.send(bitcoincli, BitcoinReq("getblockcount"))
-      val JInt(blockCount) = sender.expectMsgType[JInt](30 seconds)
-      blockCount >= 150
-    }, max = 3 minutes, interval = 2 second)
+    awaitCond(currentBlockHeight(sender) >= 150, max = 3 minutes, interval = 2 second)
   }
 
   /** Generate blocks to a given address, or to our wallet if no address is provided. */
@@ -139,6 +135,12 @@ trait BitcoindService extends Logging {
     sender.send(bitcoincli, BitcoinReq("generatetoaddress", blockCount, addressToUse))
     val JArray(blocks) = sender.expectMsgType[JValue](timeout)
     assert(blocks.size == blockCount)
+  }
+
+  def currentBlockHeight(sender: TestProbe = TestProbe()): Long = {
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val JInt(blockCount) = sender.expectMsgType[JInt]
+    blockCount.toLong
   }
 
   /** Create a new wallet and returns an RPC client to interact with it. */
@@ -174,6 +176,17 @@ trait BitcoindService extends Logging {
     rpcClient.invoke("getrawtransaction", txid).pipeTo(sender.ref)
     val JString(rawTx) = sender.expectMsgType[JString]
     Transaction.read(rawTx)
+  }
+
+  /** Get locked utxos. */
+  def getLocks(sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): Set[OutPoint] = {
+    rpcClient.invoke("listlockunspent").pipeTo(sender.ref)
+    val JArray(locks) = sender.expectMsgType[JValue]
+    locks.map(item => {
+      val JString(txid) = item \ "txid"
+      val JInt(vout) = item \ "vout"
+      new OutPoint(ByteVector32.fromValidHex(txid).reversed(), vout.toInt)
+    }).toSet
   }
 
 }

@@ -65,6 +65,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       fulfillSafetyBeforeTimeout: CltvExpiryDelta,
                       minFinalExpiryDelta: CltvExpiryDelta,
                       maxBlockProcessingDelay: FiniteDuration,
+                      maxTxPublishRetryDelay: FiniteDuration,
                       htlcMinimum: MilliSatoshi,
                       toRemoteDelay: CltvExpiryDelta,
                       maxToLocalDelay: CltvExpiryDelta,
@@ -192,7 +193,10 @@ object NodeParams extends Logging {
       // v0.4.3
       "min-feerate" -> "on-chain-fees.min-feerate",
       "smooth-feerate-window" -> "on-chain-fees.smoothing-window",
-      "feerate-provider-timeout" -> "on-chain-fees.provider-timeout"
+      "feerate-provider-timeout" -> "on-chain-fees.provider-timeout",
+      // v0.6.1
+      "enable-db-backup" -> "file-backup.enabled",
+      "backup-notify-script" -> "file-backup.notify-script"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -340,6 +344,7 @@ object NodeParams extends Logging {
       fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
       minFinalExpiryDelta = minFinalExpiryDelta,
       maxBlockProcessingDelay = FiniteDuration(config.getDuration("max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
+      maxTxPublishRetryDelay = FiniteDuration(config.getDuration("max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
       htlcMinimum = htlcMinimum,
       toRemoteDelay = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
       maxToLocalDelay = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),

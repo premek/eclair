@@ -111,6 +111,8 @@ object NodeRelay {
       Some(TrampolineExpiryTooSoon)
     } else if (payloadOut.invoiceFeatures.isDefined && payloadOut.paymentSecret.isEmpty) {
       Some(InvalidOnionPayload(UInt64(8), 0)) // payment secret field is missing
+    } else if (payloadOut.amountToForward <= MilliSatoshi(0)) {
+      Some(InvalidOnionPayload(UInt64(2), 0))
     } else {
       None
     }
@@ -118,12 +120,13 @@ object NodeRelay {
 
   /** Compute route params that honor our fee and cltv requirements. */
   def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
-    val routeMaxCltv = expiryIn - expiryOut - nodeParams.expiryDelta
-    val routeMaxFee = amountIn - amountOut - nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, amountOut)
+    val routeMaxCltv = expiryIn - expiryOut
+    val routeMaxFee = amountIn - amountOut
     RouteCalculation.getDefaultRouteParams(nodeParams.routerConf).copy(
       maxFeeBase = routeMaxFee,
       routeMaxCltv = routeMaxCltv,
-      maxFeePct = 0 // we disable percent-based max fee calculation, we're only interested in collecting our node fee
+      maxFeePct = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
+      includeLocalChannelCost = true,
     )
   }
 

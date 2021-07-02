@@ -60,7 +60,8 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       ageFactor = 0,
       capacityFactor = 0
     )),
-    mpp = MultiPartParams(15000000 msat, 6)
+    mpp = MultiPartParams(15000000 msat, 6),
+    includeLocalChannelCost = false,
   ))
 
   // we need to provide a value higher than every node's fulfill-safety-before-timeout
@@ -68,7 +69,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
-    "eclair.enable-db-backup" -> false,
+    "eclair.file-backup.enabled" -> false,
     "eclair.server.public-ips.1" -> "127.0.0.1",
     "eclair.bitcoind.port" -> bitcoindPort,
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,

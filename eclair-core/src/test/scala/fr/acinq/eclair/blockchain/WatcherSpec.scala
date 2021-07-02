@@ -29,7 +29,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 object WatcherSpec {
 
   /**
-   * Create a transaction that spends a p2wpkh output from an input transaction and sends it to the same address.
+   * Create a transaction that spends a p2wpkh output from an input transaction and sends it to another p2wpkh output.
    *
    * @param tx   tx that sends funds to a p2wpkh of priv
    * @param priv private key that tx sends funds to
@@ -38,14 +38,38 @@ object WatcherSpec {
    * @return a tx spending the input tx
    */
   def createSpendP2WPKH(tx: Transaction, priv: PrivateKey, to: PublicKey, fee: Satoshi, sequence: Long, lockTime: Long): Transaction = {
-    // tx sends funds to our key
+    createSpendManyP2WPKH(tx :: Nil, priv, to, fee, sequence, lockTime)
+  }
+
+  /**
+   * Create a transaction that spends p2wpkh outputs from input transactions and sends the funds to another p2wpkh output.
+   *
+   * @param txs  txs that send funds to a p2wpkh of priv
+   * @param priv private key that tx sends funds to
+   * @param to   p2wpkh to send to
+   * @param fee  amount in - amount out
+   * @return a tx spending the input txs
+   */
+  def createSpendManyP2WPKH(txs: Seq[Transaction], priv: PrivateKey, to: PublicKey, fee: Satoshi, sequence: Long, lockTime: Long): Transaction = {
+    // txs send funds to our key
     val pub = priv.publicKey
-    val outputIndex = tx.txOut.indexWhere(_.publicKeyScript.contentEquals(Script.write(Script.pay2wpkh(pub))))
-    // we spend this output and create a similar output with a smaller amount
-    val unsigned = new Transaction(2, new TxIn(new OutPoint(tx, outputIndex), Nil, sequence) :: Nil, new TxOut(tx.txOut(outputIndex).amount minus fee, Script.pay2wpkh(to)) :: Nil, lockTime)
-    val sig = Transaction.signInput(unsigned, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx.txOut(outputIndex).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-    val signed = unsigned.updateWitness(0, new ScriptWitness().push(sig).push(pub.value))
-    Transaction.correctlySpends(signed, tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    val inputs = txs.map(tx => {
+      val outputIndex = tx.txOut.indexWhere(_.publicKeyScript.contentEquals(Script.write(Script.pay2wpkh(pub))))
+      (new OutPoint(tx, outputIndex), tx.txOut(outputIndex).amount)
+    })
+    // we spend these inputs and create a similar output with a smaller amount
+    val unsigned = new Transaction(
+      2,
+      inputs.map(_._1).map(outPoint => new TxIn(outPoint, Nil, sequence)),
+      new TxOut(inputs.map(_._2).sum minus fee, Script.pay2wpkh(to)) :: Nil,
+      lockTime
+    )
+    val signed = inputs.map(_._2).zipWithIndex.foldLeft(unsigned) {
+      case (tx, (amount, i)) =>
+        val sig = Transaction.signInput(tx, i, Script.pay2pkh(pub), SIGHASH_ALL, amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+        tx.updateWitness(i, new ScriptWitness().push(sig).push(pub.value))
+    }
+    Transaction.correctlySpends(signed, txs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     signed
   }
 
