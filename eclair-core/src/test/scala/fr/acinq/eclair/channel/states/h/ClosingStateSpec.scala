@@ -317,11 +317,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchFundingSpentTriggered (mutual close before converging)") { f =>
-    testMutualCloseBeforeConverge(f, ChannelFeatures(Features.empty))
+    testMutualCloseBeforeConverge(f, ChannelFeatures(ChannelTypes.Standard.features))
   }
 
   test("recv WatchFundingSpentTriggered (mutual close before converging, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testMutualCloseBeforeConverge(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    testMutualCloseBeforeConverge(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
   }
 
   test("recv WatchTxConfirmedTriggered (mutual close)") { f =>
@@ -424,11 +424,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchTxConfirmedTriggered (local commit)") { f =>
-    testLocalCommitTxConfirmed(f, ChannelFeatures(Features.empty))
+    testLocalCommitTxConfirmed(f, ChannelFeatures(ChannelTypes.Standard.features))
   }
 
   test("recv WatchTxConfirmedTriggered (local commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testLocalCommitTxConfirmed(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    testLocalCommitTxConfirmed(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
   }
 
   test("recv WatchTxConfirmedTriggered (local commit with multiple htlcs for the same payment)") { f =>
@@ -675,7 +675,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelFeatures === ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory)))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelFeatures.channelType === ChannelTypes.StaticRemoteKey)
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
     val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 2) // two main outputs
@@ -693,7 +693,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-    assert(initialState.commitments.channelFeatures === ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    assert(initialState.commitments.channelFeatures.channelType === ChannelTypes.AnchorOutputs)
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
     val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 4) // two main outputs + two anchors
@@ -751,11 +751,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit with multiple htlcs for the same payment)") { f =>
-    testRemoteCommitTxWithHtlcsConfirmed(f, ChannelFeatures(Features.empty))
+    testRemoteCommitTxWithHtlcsConfirmed(f, ChannelFeatures(ChannelTypes.Standard.features))
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit with multiple htlcs for the same payment, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testRemoteCommitTxWithHtlcsConfirmed(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    testRemoteCommitTxWithHtlcsConfirmed(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit) followed by CMD_FULFILL_HTLC") { f =>
@@ -884,7 +884,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (next remote commit, static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
-    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory)))
+    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelFeatures(ChannelTypes.StaticRemoteKey.features))
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(42, 0, bobCommitTx)
     assert(closingState.claimMainOutputTx.isEmpty) // with static_remotekey we don't claim out main output
@@ -904,7 +904,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (next remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
-    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(42, 0, bobCommitTx)
     alice ! WatchTxConfirmedTriggered(45, 0, closingState.claimMainOutputTx.get.tx)
@@ -975,7 +975,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv INPUT_RESTORED (next remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
 
-    val (bobCommitTx, closingState, _) = testNextRemoteCommitTxConfirmed(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    val (bobCommitTx, closingState, _) = testNextRemoteCommitTxConfirmed(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState)
 
     // simulate a node restart
@@ -1060,7 +1060,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (future remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
-    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory)))
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelFeatures(ChannelTypes.StaticRemoteKey.features))
     // using option_static_remotekey alice doesn't need to sweep her output
     awaitCond(alice.stateName == CLOSING, 10 seconds)
     alice ! WatchTxConfirmedTriggered(0, 0, bobCommitTx)
@@ -1070,7 +1070,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (future remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
-    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
     // alice is able to claim its main output
     val claimMainTx = alice2blockchain.expectMsgType[PublishRawTx].tx
     Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1244,15 +1244,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchFundingSpentTriggered (one revoked tx)") { f =>
-    testFundingSpentRevokedTx(f, ChannelFeatures(Features.empty))
+    testFundingSpentRevokedTx(f, ChannelFeatures(ChannelTypes.Standard.features))
   }
 
   test("recv WatchFundingSpentTriggered (one revoked tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
-    testFundingSpentRevokedTx(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory)))
+    testFundingSpentRevokedTx(f, ChannelFeatures(ChannelTypes.StaticRemoteKey.features))
   }
 
   test("recv WatchFundingSpentTriggered (one revoked tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testFundingSpentRevokedTx(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    testFundingSpentRevokedTx(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
   }
 
   test("recv WatchFundingSpentTriggered (multiple revoked tx)") { f =>
@@ -1328,11 +1328,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv INPUT_RESTORED (one revoked tx)") { f =>
-    testInputRestoredRevokedTx(f, ChannelFeatures(Features.empty))
+    testInputRestoredRevokedTx(f, ChannelFeatures(ChannelTypes.Standard.features))
   }
 
   test("recv INPUT_RESTORED (one revoked tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testInputRestoredRevokedTx(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    testInputRestoredRevokedTx(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
   }
 
   def testOutputSpentRevokedTx(f: FixtureParam, channelFeatures: ChannelFeatures): Unit = {
@@ -1441,22 +1441,22 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx)") { f =>
-    testOutputSpentRevokedTx(f, ChannelFeatures(Features.empty))
+    testOutputSpentRevokedTx(f, ChannelFeatures(ChannelTypes.Standard.features))
   }
 
   test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
-    testOutputSpentRevokedTx(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory)))
+    testOutputSpentRevokedTx(f, ChannelFeatures(ChannelTypes.StaticRemoteKey.features))
   }
 
   test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testOutputSpentRevokedTx(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    testOutputSpentRevokedTx(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
   }
 
   test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published aggregated htlc tx)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
 
     // bob publishes one of his revoked txs
-    val revokedCloseFixture = prepareRevokedClose(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    val revokedCloseFixture = prepareRevokedClose(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
     val bobRevokedCommit = revokedCloseFixture.bobRevokedTxs(2)
     val commitmentFormat = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitmentFormat
     alice ! WatchFundingSpentTriggered(bobRevokedCommit.commitTxAndRemoteSig.commitTx.tx)
@@ -1576,11 +1576,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs)") { f =>
-    testRevokedTxConfirmed(f, ChannelFeatures(Features.empty))
+    testRevokedTxConfirmed(f, ChannelFeatures(ChannelTypes.Standard.features))
   }
 
   test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testRevokedTxConfirmed(f, ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)))
+    testRevokedTxConfirmed(f, ChannelFeatures(ChannelTypes.AnchorOutputs.features))
   }
 
   test("recv ChannelReestablish") { f =>

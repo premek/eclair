@@ -109,7 +109,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
   }
 
-  def setChannelFeatures(defaultChannelParams: LocalParams, tags: Set[String]): LocalParams = {
+  // NB: the features stored in LocalParams contain the node's features, which may be different from the channel features.
+  def setLocalFeatures(defaultChannelParams: LocalParams, tags: Set[String]): LocalParams = {
     import com.softwaremill.quicklens._
 
     defaultChannelParams
@@ -124,23 +125,20 @@ trait StateTestsHelperMethods extends TestKitBase {
     import setup._
 
     val channelConfig = ChannelConfig.standard
-    val channelFeatures = if (tags.contains(StateTestsTags.AnchorOutputs)) {
-      ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
-    } else if (tags.contains(StateTestsTags.StaticRemoteKey)) {
-      ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory))
-    } else {
-      ChannelFeatures(Features.empty)
-    }
+    val channelFeatures = ChannelFeatures(Features.empty)
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Mandatory))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory).updated(Features.AnchorOutputs, FeatureSupport.Mandatory))
 
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val aliceParams = setChannelFeatures(Alice.channelParams, tags)
+    val aliceParams = setLocalFeatures(Alice.channelParams, tags)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
-    val bobParams = setChannelFeatures(Bob.channelParams, tags)
+    val bobParams = setLocalFeatures(Bob.channelParams, tags)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
-    val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val initialFeeratePerKw = if (channelFeatures.hasFeature(Features.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(StateTestsTags.NoPushMsat)) {
       (TestConstants.fundingSatoshis, 0.msat)
     } else {

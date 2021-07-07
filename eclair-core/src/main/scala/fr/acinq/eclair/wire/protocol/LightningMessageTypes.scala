@@ -87,7 +87,9 @@ case class OpenChannel(chainHash: ByteVector32,
                        htlcBasepoint: PublicKey,
                        firstPerCommitmentPoint: PublicKey,
                        channelFlags: Byte,
-                       tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
+                       tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash {
+  val channelType_opt: Option[Features] = tlvStream.get[ChannelTlv.ChannelType].map(_.features)
+}
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
@@ -103,7 +105,9 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          delayedPaymentBasepoint: PublicKey,
                          htlcBasepoint: PublicKey,
                          firstPerCommitmentPoint: PublicKey,
-                         tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId
+                         tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
+  val channelType_opt: Option[Features] = tlvStream.get[ChannelTlv.ChannelType].map(_.features)
+}
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxid: ByteVector32,

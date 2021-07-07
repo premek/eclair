@@ -270,7 +270,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection)
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
   }
@@ -284,7 +284,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection) // Bob doesn't support wumbo, Alice does
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
   }
@@ -298,9 +298,66 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
+  }
+
+  test("don't spawn a channel if we don't support their channel type") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection)
+    assert(peer.stateData.channels.isEmpty)
+
+    // They only support anchor outputs and we don't.
+    {
+      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelType(ChannelTypes.AnchorOutputs.features))
+      val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+      peerConnection.send(peer, open)
+      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x101000"))
+    }
+    // They want to use a channel type that doesn't exist in the spec.
+    {
+      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelType(Features(AnchorOutputs -> Optional)))
+      val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+      peerConnection.send(peer, open)
+      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x200000"))
+    }
+    // They want to use a channel type we don't support yet.
+    {
+      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelType(Features(Map[Feature, FeatureSupport](StaticRemoteKey -> Mandatory), Set(UnknownFeature(22)))))
+      val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+      peerConnection.send(peer, open)
+      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x401000"))
+    }
+  }
+
+  test("use their channel type when spawning a channel", Tag("static_remotekey")) { f =>
+    import f._
+
+    // We both support option_static_remotekey but they want to open a standard channel.
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
+    assert(peer.stateData.channels.isEmpty)
+    val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelType(Features.empty))
+    val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+    peerConnection.send(peer, open)
+    awaitCond(peer.stateData.channels.nonEmpty)
+    assert(channel.expectMsgType[INPUT_INIT_FUNDEE].channelFeatures === ChannelFeatures(Features.empty))
+    channel.expectMsg(open)
+  }
+
+  test("use requested channel type when spawning a channel", Tag("static_remotekey")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
+    assert(peer.stateData.channels.isEmpty)
+
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None, None))
+    assert(channel.expectMsgType[INPUT_INIT_FUNDER].channelFeatures.channelType === ChannelTypes.StaticRemoteKey)
+
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, Some(ChannelTypes.Standard), None, None, None, None))
+    assert(channel.expectMsgType[INPUT_INIT_FUNDER].channelFeatures.channelType === ChannelTypes.Standard)
   }
 
   test("use correct fee rates when spawning a channel") { f =>
@@ -311,7 +368,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(peer.stateData.channels.isEmpty)
 
     val relayFees = Some(100 msat, 1000)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, relayFees, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, None, relayFees, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.channelConfig === ChannelConfig.standard)
     assert(init.channelFeatures === ChannelFeatures(Features.empty))
@@ -330,7 +387,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     // We ensure the current network feerate is higher than the default anchor output feerate.
     val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2))
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.channelFeatures === ChannelFeatures(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory)))
     assert(init.fundingAmount === 15000.sat)
@@ -344,7 +401,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.channelFeatures === ChannelFeatures(Features(StaticRemoteKey -> Mandatory)))
     assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
@@ -363,7 +420,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     }
     val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new TestWallet, channelFactory))
     connect(remoteNodeId, peer, peerConnection)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 100 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 100 msat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.fundingAmount === 15000.sat)
     assert(init.pushAmount === 100.msat)

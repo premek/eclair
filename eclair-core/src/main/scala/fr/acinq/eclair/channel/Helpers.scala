@@ -162,6 +162,12 @@ object Helpers {
     val reserveToFundingRatio = accept.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
+    // if channel_type is set, and channel_type was set in open_channel, and they are not equal types: MUST reject the channel.
+    accept.channelType_opt match {
+      case Some(theirChannelType) if accept.channelType_opt != open.channelType_opt => return Left(InvalidChannelType(open.temporaryChannelId, theirChannelType))
+      case _ => // nothing to do
+    }
+
     Right()
   }
 

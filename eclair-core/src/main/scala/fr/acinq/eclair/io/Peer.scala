@@ -131,13 +131,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
           stay
         } else {
           val channelConfig = ChannelConfig.standard
-          val channelFeatures = ChannelFeatures.pickChannelFeatures(d.localFeatures, d.remoteFeatures)
+          // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
+          val channelFeatures = c.channelType_opt match {
+            case Some(channelTypeOverride) => ChannelFeatures(channelTypeOverride, d.localFeatures, d.remoteFeatures)
+            case None => ChannelFeatures(ChannelTypes.pickChannelType(d.localFeatures, d.remoteFeatures), d.localFeatures, d.remoteFeatures)
+          }
           val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, funder = true, c.fundingSatoshis, origin_opt = Some(sender), channelFeatures)
           c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
           val temporaryChannelId = randomBytes32()
           val channelFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelFeatures, c.fundingSatoshis, None)
           val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-          log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
+          log.info(s"requesting a new channel with type=${channelFeatures.channelType} fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
           channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, c.initialRelayFees_opt, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelConfig, channelFeatures)
           stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         }
@@ -146,13 +150,29 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case None =>
             val channelConfig = ChannelConfig.standard
-            val channelFeatures = ChannelFeatures.pickChannelFeatures(d.localFeatures, d.remoteFeatures)
-            val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None, channelFeatures)
-            val temporaryChannelId = msg.temporaryChannelId
-            log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
-            channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelFeatures)
-            channel ! msg
-            stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+            val channelType_opt = msg.channelType_opt match {
+              case Some(proposedFeatures) =>
+                // We ensure that we support the features necessary for this channel type.
+                val featuresSupported = proposedFeatures.unknown.isEmpty && proposedFeatures.activated.forall { case (f, _) => d.localFeatures.hasFeature(f) }
+                if (featuresSupported) ChannelTypes.fromFeatures(proposedFeatures) else None
+              case None => Some(ChannelTypes.pickChannelType(d.localFeatures, d.remoteFeatures))
+            }
+            channelType_opt match {
+              case Some(channelType) =>
+                val channelFeatures = ChannelFeatures(channelType, d.localFeatures, d.remoteFeatures)
+                val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None, channelFeatures)
+                val temporaryChannelId = msg.temporaryChannelId
+                log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
+                channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelFeatures)
+                channel ! msg
+                stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+              case None =>
+                msg.channelType_opt.foreach(proposedChannelType => {
+                  log.warning(s"ignoring open_channel with invalid channel type=$proposedChannelType")
+                  d.peerConnection ! Error(msg.temporaryChannelId, InvalidChannelType(msg.temporaryChannelId, proposedChannelType).getMessage)
+                })
+                stay
+            }
           case Some(_) =>
             log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
             stay
@@ -406,7 +426,7 @@ object Peer {
   }
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful
-  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[FeeratePerKw], initialRelayFees_opt: Option[(MilliSatoshi, Int)], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) extends PossiblyHarmful {
+  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelType_opt: Option[ChannelType], fundingTxFeeratePerKw_opt: Option[FeeratePerKw], initialRelayFees_opt: Option[(MilliSatoshi, Int)], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) extends PossiblyHarmful {
     require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis >= 0.sat, s"fundingSatoshis must be positive")
     require(pushMsat >= 0.msat, s"pushMsat must be positive")

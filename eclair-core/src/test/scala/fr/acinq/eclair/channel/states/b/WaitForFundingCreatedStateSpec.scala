@@ -43,9 +43,9 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
     val aliceNodeParams = Alice.nodeParams.modify(_.maxFundingSatoshis).setToIf(test.tags.contains(StateTestsTags.Wumbo))(Btc(100))
-    val aliceParams = setChannelFeatures(Alice.channelParams, test.tags)
+    val aliceParams = setLocalFeatures(Alice.channelParams, test.tags)
     val bobNodeParams = Bob.nodeParams.modify(_.maxFundingSatoshis).setToIf(test.tags.contains(StateTestsTags.Wumbo))(Btc(100))
-    val bobParams = setChannelFeatures(Bob.channelParams, test.tags)
+    val bobParams = setLocalFeatures(Bob.channelParams, test.tags)
 
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
       (1000100 sat, (1000000 sat).toMilliSatoshi) // toLocal = 100 satoshis

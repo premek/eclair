@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.fee
 import fr.acinq.bitcoin.SatoshiLong
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentFeerates
-import fr.acinq.eclair.channel.ChannelFeatures
+import fr.acinq.eclair.channel.{ChannelFeatures, ChannelTypes}
 import fr.acinq.eclair.{FeatureSupport, Features, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -48,7 +48,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("get commitment feerate (anchor outputs)") {
     val feeEstimator = new TestFeeEstimator()
-    val channelFeatures = ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
+    val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputs.features)
     val defaultNodeId = randomKey().publicKey
     val defaultMaxCommitFeerate = FeeratePerKw(2500 sat)
     val overrideNodeId = randomKey().publicKey
@@ -91,7 +91,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("fee difference too high (anchor outputs)") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat))
-    val channelFeatures = ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
+    val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputs.features)
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(2500 sat), false),

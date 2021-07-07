@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelFeatures
+import fr.acinq.eclair.channel.{ChannelFeatures, ChannelTypes}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions._
@@ -399,7 +399,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 class DefaultCommitmentTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-default-commitment-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.empty)
+  override def channelFeatures: ChannelFeatures = ChannelFeatures(ChannelTypes.Standard.features)
   override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
   // @formatter:on
 }
@@ -407,7 +407,7 @@ class DefaultCommitmentTestVectorSpec extends TestVectorsSpec {
 class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-static-remotekey-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory))
+  override def channelFeatures: ChannelFeatures = ChannelFeatures(ChannelTypes.StaticRemoteKey.features)
   override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
   // @formatter:on
 }
@@ -415,7 +415,7 @@ class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
 class AnchorOutputsTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
+  override def channelFeatures: ChannelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputs.features)
   override def commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
   // @formatter:on
 }

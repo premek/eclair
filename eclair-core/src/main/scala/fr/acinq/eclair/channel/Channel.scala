@@ -195,7 +195,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, _, localParams, remote, _, channelFlags, channelConfig, _), Nothing) =>
+    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, _, localParams, remote, _, channelFlags, channelConfig, channelFeatures), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = true, temporaryChannelId, initialFeeratePerKw, Some(fundingTxFeeratePerKw)))
       activeConnection = remote
       txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
@@ -221,7 +221,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         channelFlags = channelFlags,
         // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
         // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-        tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+        tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), ChannelTlv.ChannelType(channelFeatures.channelType.features)))
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _, _), Nothing) if !localParams.isFunder =>
@@ -362,7 +362,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
             // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
             // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-            tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+            tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), ChannelTlv.ChannelType(channelFeatures.channelType.features)))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
@@ -395,26 +395,40 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Helpers.validateParamsFunder(nodeParams, open, accept) match {
         case Left(t) => handleLocalError(t, d, Some(accept))
         case _ =>
-          val remoteParams = RemoteParams(
-            nodeId = remoteNodeId,
-            dustLimit = accept.dustLimitSatoshis,
-            maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-            channelReserve = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
-            htlcMinimum = accept.htlcMinimumMsat,
-            toSelfDelay = accept.toSelfDelay,
-            maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
-            fundingPubKey = accept.fundingPubkey,
-            revocationBasepoint = accept.revocationBasepoint,
-            paymentBasepoint = accept.paymentBasepoint,
-            delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
-            htlcBasepoint = accept.htlcBasepoint,
-            features = remoteInit.features,
-            shutdownScript = None)
-          log.debug("remote params: {}", remoteParams)
-          val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-          val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
-          wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeeratePerKw).pipeTo(self)
-          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, initialRelayFees_opt, accept.firstPerCommitmentPoint, channelConfig, channelFeatures, open)
+          // If we have overridden the default channel type, but they didn't support explicit channel type negotiation,
+          // we need to abort because they expect a different channel type than what we offered.
+          val channelTypeOk = (open.channelType_opt, accept.channelType_opt) match {
+            case (Some(proposedChannelType), None) =>
+              val channelTypeTheyExpect = ChannelTypes.pickChannelType(localParams.features, remoteInit.features)
+              channelTypeTheyExpect.features == proposedChannelType
+            case _ => true
+          }
+          if (!channelTypeOk) {
+            log.warning("open channel cancelled, peer doesn't support explicit channel type negotiation")
+            channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, peer doesn't support explicit channel type negotiation"))))
+            goto(CLOSED) sending Error(accept.temporaryChannelId, "explicit channel type negotiation not supported")
+          } else {
+            val remoteParams = RemoteParams(
+              nodeId = remoteNodeId,
+              dustLimit = accept.dustLimitSatoshis,
+              maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
+              channelReserve = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
+              htlcMinimum = accept.htlcMinimumMsat,
+              toSelfDelay = accept.toSelfDelay,
+              maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
+              fundingPubKey = accept.fundingPubkey,
+              revocationBasepoint = accept.revocationBasepoint,
+              paymentBasepoint = accept.paymentBasepoint,
+              delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
+              htlcBasepoint = accept.htlcBasepoint,
+              features = remoteInit.features,
+              shutdownScript = None)
+            log.debug("remote params: {}", remoteParams)
+            val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
+            val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
+            wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeeratePerKw).pipeTo(self)
+            goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, initialRelayFees_opt, accept.firstPerCommitmentPoint, channelConfig, channelFeatures, open)
+          }
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
