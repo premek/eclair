@@ -45,6 +45,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val commonPerfTestConfig = ConfigFactory.parseMap(Map(
       "eclair.max-funding-satoshis" -> 100_000_000,
       "eclair.max-accepted-htlcs" -> Channel.MAX_ACCEPTED_HTLCS,
+      "eclair.sig-delay" -> "30 millis",
       "eclair.file-backup.enabled" -> false,
       "eclair.db.sqlite.mode" -> "wal",
       "eclair.db.sqlite.sync" -> "full",

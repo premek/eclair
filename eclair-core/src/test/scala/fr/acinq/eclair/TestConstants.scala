@@ -108,6 +108,7 @@ object TestConstants {
       ),
       maxHtlcValueInFlightMsat = UInt64(500000000),
       maxAcceptedHtlcs = 100,
+      sigDelay = 1 millisecond,
       expiryDelta = CltvExpiryDelta(144),
       fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
       minFinalExpiryDelta = CltvExpiryDelta(18),
@@ -215,6 +216,7 @@ object TestConstants {
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
+      sigDelay = 1 millisecond,
       expiryDelta = CltvExpiryDelta(144),
       fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
       minFinalExpiryDelta = CltvExpiryDelta(18),

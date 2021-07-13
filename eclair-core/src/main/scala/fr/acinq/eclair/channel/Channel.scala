@@ -700,7 +700,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       Commitments.sendAdd(d.commitments, c, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
         case Right((commitments1, add)) =>
-          if (c.commit) self ! CMD_SIGN()
+          if (c.commit) context.system.scheduler.scheduleOnce(nodeParams.sigDelay, self, CMD_SIGN())
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
@@ -715,7 +715,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FULFILL_HTLC, d: DATA_NORMAL) =>
       Commitments.sendFulfill(d.commitments, c) match {
         case Right((commitments1, fulfill)) =>
-          if (c.commit) self ! CMD_SIGN()
+          if (c.commit) context.system.scheduler.scheduleOnce(nodeParams.sigDelay, self, CMD_SIGN())
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Left(cause) =>
@@ -735,7 +735,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FAIL_HTLC, d: DATA_NORMAL) =>
       Commitments.sendFail(d.commitments, c, nodeParams.privateKey) match {
         case Right((commitments1, fail)) =>
-          if (c.commit) self ! CMD_SIGN()
+          if (c.commit) context.system.scheduler.scheduleOnce(nodeParams.sigDelay, self, CMD_SIGN())
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
@@ -746,7 +746,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_NORMAL) =>
       Commitments.sendFailMalformed(d.commitments, c) match {
         case Right((commitments1, fail)) =>
-          if (c.commit) self ! CMD_SIGN()
+          if (c.commit) context.system.scheduler.scheduleOnce(nodeParams.sigDelay, self, CMD_SIGN())
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
@@ -1070,7 +1070,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FULFILL_HTLC, d: DATA_SHUTDOWN) =>
       Commitments.sendFulfill(d.commitments, c) match {
         case Right((commitments1, fulfill)) =>
-          if (c.commit) self ! CMD_SIGN()
+          if (c.commit) context.system.scheduler.scheduleOnce(nodeParams.sigDelay, self, CMD_SIGN())
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -1089,7 +1089,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FAIL_HTLC, d: DATA_SHUTDOWN) =>
       Commitments.sendFail(d.commitments, c, nodeParams.privateKey) match {
         case Right((commitments1, fail)) =>
-          if (c.commit) self ! CMD_SIGN()
+          if (c.commit) context.system.scheduler.scheduleOnce(nodeParams.sigDelay, self, CMD_SIGN())
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -1099,7 +1099,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_SHUTDOWN) =>
       Commitments.sendFailMalformed(d.commitments, c) match {
         case Right((commitments1, fail)) =>
-          if (c.commit) self ! CMD_SIGN()
+          if (c.commit) context.system.scheduler.scheduleOnce(nodeParams.sigDelay, self, CMD_SIGN())
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
