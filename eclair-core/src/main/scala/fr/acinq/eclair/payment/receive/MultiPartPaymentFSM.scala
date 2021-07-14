@@ -138,12 +138,13 @@ object MultiPartPaymentFSM {
     override def paymentHash: ByteVector32  = htlc.paymentHash
     override def amount: MilliSatoshi  = htlc.amountMsat
   }
+  sealed trait MultiPartPaymentResult { def paymentHash: ByteVector32 }
   /** We successfully received all parts of the payment. */
-  case class MultiPartPaymentSucceeded(paymentHash: ByteVector32, parts: Queue[PaymentPart])
+  case class MultiPartPaymentSucceeded(paymentHash: ByteVector32, parts: Queue[PaymentPart]) extends MultiPartPaymentResult
   /** We aborted the payment because of an inconsistency in the payment set or because we didn't receive the total amount in reasonable time. */
-  case class MultiPartPaymentFailed(paymentHash: ByteVector32, failure: FailureMessage, parts: Queue[PaymentPart])
+  case class MultiPartPaymentFailed(paymentHash: ByteVector32, failure: FailureMessage, parts: Queue[PaymentPart]) extends MultiPartPaymentResult
   /** We received an extraneous payment after we reached a final state (succeeded or failed). */
-  case class ExtraPaymentReceived[T <: PaymentPart](paymentHash: ByteVector32, payment: T, failure: Option[FailureMessage])
+  case class ExtraPaymentReceived[T <: PaymentPart](paymentHash: ByteVector32, payment: T, failure: Option[FailureMessage]) extends MultiPartPaymentResult
   // @formatter:on
 
   // @formatter:off
